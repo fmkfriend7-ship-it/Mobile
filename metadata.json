@@ -1,0 +1,6 @@
+{
+  "name": "FMK Mobile Website",
+  "description": "Luxury 3D mobile shopping website for FMK Mobile Store featuring interactive 3D iPhone showcases, exploded mobile hardware parts, and flagship smartphones.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
