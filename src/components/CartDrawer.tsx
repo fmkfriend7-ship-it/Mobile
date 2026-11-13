@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { CheckCircle2, Minus, Plus, ShoppingBag, Trash2, X } from 'lucide-react';
 import { PhoneColorOption, PhoneProduct, StorageOption } from '../data/catalog';
+import { saveOrderToSupabase } from '../lib/supabase';
 
 export interface CartItem {
   key: string;
@@ -46,6 +47,15 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     e.preventDefault();
     if (!customerName.trim() || !customerPhone.trim() || !customerAddress.trim()) return;
     const generatedId = `FMK-${Math.floor(100000 + Math.random() * 900000)}`;
+    void saveOrderToSupabase({
+      orderNumber: generatedId,
+      customerName: customerName.trim(),
+      customerPhone: customerPhone.trim(),
+      deliveryAddress: customerAddress.trim(),
+      paymentMethod,
+      totalAmount: total,
+      items,
+    });
     setOrderNumber(generatedId);
     setConfirmedTotal(total);
     onClearCart();

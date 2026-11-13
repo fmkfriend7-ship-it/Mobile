@@ -1,6 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Check, Edit3, Mail, MapPin, Phone, Send, ShieldCheck } from 'lucide-react';
 import { FmkLogo } from './FmkLogo';
+import {
+  fetchStoreSettingsFromSupabase,
+  saveInquiryToSupabase,
+  saveStoreSettingsToSupabase,
+} from '../lib/supabase';
 
 const STORAGE_PHONE_KEY = 'fmk_contact_phone';
 const STORAGE_ADDRESS_KEY = 'fmk_business_address';
@@ -39,6 +44,15 @@ export const AboutAndContactSection: React.FC = () => {
     } catch {
       // ignore storage errors
     }
+
+    fetchStoreSettingsFromSupabase().then((remote) => {
+      if (remote) {
+        setContactNumber(remote.contact_number);
+        setDraftPhone(remote.contact_number);
+        setBusinessAddress(remote.business_address);
+        setDraftAddress(remote.business_address);
+      }
+    });
   }, []);
 
   const savePhone = () => {
@@ -51,6 +65,7 @@ export const AboutAndContactSection: React.FC = () => {
     } catch {
       // ignore
     }
+    void saveStoreSettingsToSupabase(clean, businessAddress);
   };
 
   const saveAddress = () => {
@@ -65,11 +80,18 @@ export const AboutAndContactSection: React.FC = () => {
     } catch {
       // ignore
     }
+    void saveStoreSettingsToSupabase(contactNumber, clean);
   };
 
   const handleContactSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!senderName.trim() || !senderEmail.trim() || !message.trim()) return;
+    void saveInquiryToSupabase({
+      senderName: senderName.trim(),
+      senderEmail: senderEmail.trim(),
+      topic: subject,
+      message: message.trim(),
+    });
     setSubmitted(true);
     setSenderName('');
     setSenderEmail('');
