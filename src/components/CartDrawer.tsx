@@ -1,7 +1,12 @@
-import React, { useState } from 'react';
-import { CheckCircle2, Minus, Plus, ShoppingBag, Trash2, X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { CheckCircle2, Minus, Package, Plus, ShoppingBag, Trash2, X } from 'lucide-react';
 import { PhoneColorOption, PhoneProduct, StorageOption } from '../data/catalog';
-import { saveOrderToSupabase } from '../lib/supabase';
+import {
+  OrderSummaryRecord,
+  fetchSessionOrdersFromSupabase,
+  isSupabaseConfigured,
+  saveOrderToSupabase,
+} from '../lib/supabase';
 
 export interface CartItem {
   key: string;
@@ -29,7 +34,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   onRemoveItem,
   onClearCart,
 }) => {
-  const [step, setStep] = useState<'bag' | 'checkout' | 'confirmed'>('bag');
+  const [step, setStep] = useState<'bag' | 'checkout' | 'confirmed' | 'orders'>('bag');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
@@ -37,17 +42,42 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const [orderNumber, setOrderNumber] = useState('');
   const [confirmedTotal, setConfirmedTotal] = useState(0);
 
+  const [submittingOrder, setSubmittingOrder] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [orders, setOrders] = useState<OrderSummaryRecord[]>([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
+
+  const loadOrders = async () => {
+    if (!isSupabaseConfigured) return;
+    setLoadingOrders(true);
+    const { data, error } = await fetchSessionOrdersFromSupabase();
+    setLoadingOrders(false);
+    if (error) {
+      setCheckoutError(error);
+    } else if (data) {
+      setOrders(data);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen && step === 'orders') {
+      void loadOrders();
+    }
+  }, [isOpen, step]);
+
   if (!isOpen) return null;
 
   const subtotal = items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
-  const shipping = subtotal > 0 ? 0 : 0; // Complimentary insured express shipping
-  const total = subtotal + shipping;
+  const total = subtotal;
 
-  const handleConfirmOrder = (e: React.FormEvent) => {
+  const handleConfirmOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!customerName.trim() || !customerPhone.trim() || !customerAddress.trim()) return;
+    setSubmittingOrder(true);
+    setCheckoutError(null);
+
     const generatedId = `FMK-${Math.floor(100000 + Math.random() * 900000)}`;
-    void saveOrderToSupabase({
+    const { data, error } = await saveOrderToSupabase({
       orderNumber: generatedId,
       customerName: customerName.trim(),
       customerPhone: customerPhone.trim(),
@@ -56,6 +86,18 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       totalAmount: total,
       items,
     });
+
+    setSubmittingOrder(false);
+
+    if (error) {
+      setCheckoutError(error);
+      return;
+    }
+
+    if (data) {
+      setOrders((prev) => [data, ...prev]);
+    }
+
     setOrderNumber(generatedId);
     setConfirmedTotal(total);
     onClearCart();
@@ -64,6 +106,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
   const resetAndClose = () => {
     if (step === 'confirmed') setStep('bag');
+    setCheckoutError(null);
     onClose();
   };
 
@@ -76,28 +119,87 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     >
       <div className="flex h-full w-full max-w-md flex-col border-l border-white/10 bg-[#09090B] text-[#FAFAFA]">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-white/10 px-6 py-5">
+        <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
           <div className="flex items-center gap-2.5">
             <ShoppingBag className="h-5 w-5 text-[#D4AF37]" />
             <h2 className="font-display text-2xl font-semibold text-[#FAFAFA]">
               {step === 'bag' && 'Your Shopping Bag'}
               {step === 'checkout' && 'Express Checkout'}
               {step === 'confirmed' && 'Order Confirmed'}
+              {step === 'orders' && 'Your Orders'}
             </h2>
           </div>
-          <button
-            type="button"
-            onClick={resetAndClose}
-            aria-label="Close shopping bag"
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 bg-[#141418] text-[#FAFAFA] hover:border-[#D4AF37]"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setStep(step === 'orders' ? 'bag' : 'orders')}
+              className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-[#141418] px-2.5 py-1.5 text-xs font-medium text-[#D4AF37] hover:border-[#D4AF37]"
+            >
+              <Package className="h-3.5 w-3.5" />
+              <span>{step === 'orders' ? 'Bag' : 'Orders'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={resetAndClose}
+              aria-label="Close shopping bag"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 bg-[#141418] text-[#FAFAFA] hover:border-[#D4AF37]"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-6">
-          {step === 'confirmed' ? (
+          {checkoutError && (
+            <div className="mb-4 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-xs text-red-300">
+              {checkoutError}
+            </div>
+          )}
+
+          {step === 'orders' ? (
+            loadingOrders ? (
+              <div className="py-12 text-center text-sm text-[#A1A1AA]">
+                Loading recent orders...
+              </div>
+            ) : orders.length === 0 ? (
+              <div className="flex h-full flex-col items-center justify-center py-12 text-center">
+                <Package className="mb-3 h-10 w-10 text-[#52525B]" />
+                <p className="text-base font-medium text-[#FAFAFA]">No orders yet</p>
+                <p className="mt-1 text-sm text-[#A1A1AA]">
+                  Orders placed during your session appear here.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {orders.map((order) => (
+                  <div
+                    key={order.id}
+                    className="rounded-xl border border-white/10 bg-[#111115] p-4"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="font-mono-tabular text-xs font-semibold text-[#D4AF37]">
+                          {order.order_number}
+                        </div>
+                        <div className="mt-1 text-sm font-medium text-[#FAFAFA]">
+                          {order.customer_name}
+                        </div>
+                        <div className="mt-0.5 text-xs text-[#A1A1AA]">
+                          {order.order_status} · {order.payment_method.toUpperCase()}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-mono-tabular text-sm font-semibold text-[#FAFAFA]">
+                          ${Number(order.total_amount).toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          ) : step === 'confirmed' ? (
             <div className="flex flex-col items-center justify-center py-10 text-center">
               <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-[#D4AF37]/40 bg-[#D4AF37]/15 text-[#D4AF37]">
                 <CheckCircle2 className="h-8 w-8" />
@@ -284,7 +386,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         </div>
 
         {/* Footer Totals & Checkout CTA */}
-        {items.length > 0 && step !== 'confirmed' && (
+        {items.length > 0 && step !== 'confirmed' && step !== 'orders' && (
           <div className="border-t border-white/10 bg-[#111115] px-6 py-5">
             <div className="space-y-1.5 text-sm">
               <div className="flex justify-between text-[#A1A1AA]">
@@ -315,17 +417,21 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               <div className="mt-4 flex gap-2">
                 <button
                   type="button"
+                  disabled={submittingOrder}
                   onClick={() => setStep('bag')}
-                  className="rounded-xl border border-white/15 bg-[#18181D] px-4 py-3 text-sm font-medium text-[#FAFAFA]"
+                  className="rounded-xl border border-white/15 bg-[#18181D] px-4 py-3 text-sm font-medium text-[#FAFAFA] disabled:opacity-60"
                 >
                   Back
                 </button>
                 <button
                   type="submit"
                   form="fmk-checkout-form"
-                  className="flex-1 rounded-xl bg-[#D4AF37] py-3 text-sm font-semibold text-[#09090B] transition-colors hover:bg-[#E5C158]"
+                  disabled={submittingOrder}
+                  className="flex-1 rounded-xl bg-[#D4AF37] py-3 text-sm font-semibold text-[#09090B] transition-colors hover:bg-[#E5C158] disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Confirm Order · ${total.toLocaleString()}
+                  {submittingOrder
+                    ? 'Confirming Order...'
+                    : `Confirm Order · $${total.toLocaleString()}`}
                 </button>
               </div>
             )}

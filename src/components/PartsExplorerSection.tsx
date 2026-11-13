@@ -3,11 +3,21 @@ import { Layers, Box, Cpu, Play, Pause } from 'lucide-react';
 import { MOBILE_PARTS, MobilePart, SHOWCASE_FINISHES } from '../data/catalog';
 import { ThreeViewport } from './ThreeViewport';
 
-export const PartsExplorerSection: React.FC = () => {
+interface PartsExplorerSectionProps {
+  parts?: MobilePart[];
+}
+
+export const PartsExplorerSection: React.FC<PartsExplorerSectionProps> = ({
+  parts = MOBILE_PARTS,
+}) => {
   const [viewMode, setViewMode] = useState<'assembly' | 'individual'>('individual');
-  const [selectedPart, setSelectedPart] = useState<MobilePart>(MOBILE_PARTS[0]);
+  const [selectedPart, setSelectedPart] = useState<MobilePart>(parts[0] || MOBILE_PARTS[0]);
   const [explodeSlider, setExplodeSlider] = useState<number>(0.75);
   const [isAssemblyAnimating, setIsAssemblyAnimating] = useState<boolean>(true);
+
+  useEffect(() => {
+    setSelectedPart((prev) => parts.find((p) => p.id === prev.id) || parts[0] || MOBILE_PARTS[0]);
+  }, [parts]);
 
   // Smoothly animate between assembled (0) and exploded (1) when in assembly video mode
   useEffect(() => {
@@ -81,7 +91,7 @@ export const PartsExplorerSection: React.FC = () => {
                 11 Core Smartphone Modules
               </div>
               <div className="mt-1 grid max-h-[540px] grid-cols-1 gap-1 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-1">
-                {MOBILE_PARTS.map((part) => {
+                {parts.map((part) => {
                   const isActive = selectedPart.id === part.id;
                   return (
                     <button

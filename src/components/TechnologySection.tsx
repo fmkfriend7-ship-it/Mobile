@@ -3,13 +3,19 @@ import { ChevronDown, ChevronUp, MousePointerClick, RotateCcw } from 'lucide-rea
 import { MOBILE_PARTS, PartId, SHOWCASE_FINISHES } from '../data/catalog';
 import { ThreeViewport } from './ThreeViewport';
 
-export const TechnologySection: React.FC = () => {
+interface TechnologySectionProps {
+  parts?: typeof MOBILE_PARTS;
+}
+
+export const TechnologySection: React.FC<TechnologySectionProps> = ({
+  parts = MOBILE_PARTS,
+}) => {
   const [selectedPartId, setSelectedPartId] = useState<PartId>('processor');
   const [explodeAmount, setExplodeAmount] = useState<number>(0.65);
   const [dockCollapsed, setDockCollapsed] = useState<boolean>(false);
 
   const activePart =
-    MOBILE_PARTS.find((p) => p.id === selectedPartId) || MOBILE_PARTS[0];
+    parts.find((p) => p.id === selectedPartId) || parts[0] || MOBILE_PARTS[0];
 
   const handleReset = () => {
     setExplodeAmount(0.65);
@@ -174,7 +180,7 @@ export const TechnologySection: React.FC = () => {
                 Jump to Component
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {MOBILE_PARTS.map((part) => {
+                {parts.map((part) => {
                   const active = part.id === selectedPartId;
                   return (
                     <button

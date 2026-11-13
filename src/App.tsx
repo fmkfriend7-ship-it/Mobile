@@ -1,13 +1,19 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Box, Menu, Search, ShoppingBag, X } from 'lucide-react';
 import {
   IPHONE_PRODUCTS,
+  MOBILE_PARTS,
+  MobilePart,
   PhoneCategory,
   PhoneColorOption,
   PhoneProduct,
   SHOWCASE_FINISHES,
   StorageOption,
 } from './data/catalog';
+import {
+  fetchMobilePartsFromSupabase,
+  fetchProductsFromSupabase,
+} from './lib/supabase';
 import { FmkLogo } from './components/FmkLogo';
 import { ThreeViewport } from './components/ThreeViewport';
 import { Explore3DExperienceSection } from './components/Explore3DExperienceSection';
@@ -39,10 +45,56 @@ export default function App() {
     color?: PhoneColorOption;
   } | null>(null);
 
-  // Cart State
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  // Catalog Products & Mobile Parts (hydrated from Supabase if configured)
+  const [products, setProducts] = useState<PhoneProduct[]>(IPHONE_PRODUCTS);
+  const [mobileParts, setMobileParts] = useState<MobilePart[]>(MOBILE_PARTS);
+  const [loadingCatalog, setLoadingCatalog] = useState<boolean>(false);
+
+  // Cart State (persisted locally in browser storage; checkout saves to Supabase orders & order_items)
+  const [cartItems, setCartItems] = useState<CartItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('fmk_shopping_bag_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return [];
+  });
   const [cartOpen, setCartOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('fmk_shopping_bag_v1', JSON.stringify(cartItems));
+    } catch {
+      // ignore storage errors
+    }
+  }, [cartItems]);
+
+  useEffect(() => {
+    let active = true;
+    const loadFromSupabase = async () => {
+      setLoadingCatalog(true);
+      const [{ data: remoteProducts }, { data: remoteParts }] = await Promise.all([
+        fetchProductsFromSupabase(),
+        fetchMobilePartsFromSupabase(),
+      ]);
+      if (active && remoteProducts && remoteProducts.length > 0) {
+        setProducts(remoteProducts);
+      }
+      if (active && remoteParts && remoteParts.length > 0) {
+        setMobileParts(remoteParts);
+      }
+      if (active) setLoadingCatalog(false);
+    };
+    void loadFromSupabase();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const totalBagCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -57,22 +109,20 @@ export default function App() {
     const key = `${selection.product.id}__${selection.storage.label}__${selection.color.name}`;
     setCartItems((prev) => {
       const existing = prev.find((item) => item.key === key);
+      const nextItem: CartItem = existing
+        ? { ...existing, quantity: existing.quantity + 1 }
+        : {
+            key,
+            product: selection.product,
+            storage: selection.storage,
+            color: selection.color,
+            unitPrice: selection.finalPrice,
+            quantity: 1,
+          };
       if (existing) {
-        return prev.map((item) =>
-          item.key === key ? { ...item, quantity: item.quantity + 1 } : item
-        );
+        return prev.map((item) => (item.key === key ? nextItem : item));
       }
-      return [
-        ...prev,
-        {
-          key,
-          product: selection.product,
-          storage: selection.storage,
-          color: selection.color,
-          unitPrice: selection.finalPrice,
-          quantity: 1,
-        },
-      ];
+      return [...prev, nextItem];
     });
 
     if (openDrawer) {
@@ -83,21 +133,28 @@ export default function App() {
   };
 
   const updateCartQuantity = (key: string, delta: number) => {
-    setCartItems((prev) =>
-      prev
-        .map((item) =>
-          item.key === key ? { ...item, quantity: item.quantity + delta } : item
-        )
-        .filter((item) => item.quantity > 0)
-    );
+    setCartItems((prev) => {
+      const target = prev.find((item) => item.key === key);
+      if (!target) return prev;
+      const nextQty = target.quantity + delta;
+      if (nextQty <= 0) {
+        return prev.filter((item) => item.key !== key);
+      }
+      const updated = { ...target, quantity: nextQty };
+      return prev.map((item) => (item.key === key ? updated : item));
+    });
   };
 
   const removeCartItem = (key: string) => {
     setCartItems((prev) => prev.filter((item) => item.key !== key));
   };
 
+  const clearCart = () => {
+    setCartItems([]);
+  };
+
   const filteredProducts = useMemo(() => {
-    return IPHONE_PRODUCTS.filter((phone) => {
+    return products.filter((phone) => {
       const matchesCategory =
         selectedCategory === 'All' || phone.category === selectedCategory;
 
@@ -119,7 +176,7 @@ export default function App() {
 
       return matchesCategory && matchesSearch && matchesPrice;
     });
-  }, [searchQuery, selectedCategory, priceRange]);
+  }, [products, searchQuery, selectedCategory, priceRange]);
 
   const categories: PhoneCategory[] = ['All', 'Latest Gen', 'Pro Series', 'Standard'];
 
@@ -377,7 +434,9 @@ export default function App() {
               </div>
 
               <div className="font-mono-tabular text-xs font-medium text-[#52525B]">
-                Showing {filteredProducts.length} of {IPHONE_PRODUCTS.length} Flagship Models
+                {loadingCatalog
+                  ? 'Syncing Catalog...'
+                  : `Showing ${filteredProducts.length} of ${products.length} Flagship Models`}
               </div>
             </div>
 
@@ -479,10 +538,10 @@ export default function App() {
         </section>
 
         {/* Section 4: Explore Mobile Parts in 3D */}
-        <PartsExplorerSection />
+        <PartsExplorerSection parts={mobileParts} />
 
         {/* Section 6: Inside the Technology */}
-        <TechnologySection />
+        <TechnologySection parts={mobileParts} />
 
         {/* Section 7 & 8: About Us & Contact Information */}
         <AboutAndContactSection />
@@ -504,12 +563,12 @@ export default function App() {
         onClose={() => setCartOpen(false)}
         onUpdateQuantity={updateCartQuantity}
         onRemoveItem={removeCartItem}
-        onClearCart={() => setCartItems([])}
+        onClearCart={clearCart}
       />
 
       {/* Non-intrusive Add-to-Bag Notification */}
       {toastMessage && (
-        <div className="fixed right-6 bottom-6 z-50 flex items-center gap-3 rounded-xl border border-[#D4AF37]/50 bg-[#09090B] px-4 py-3 text-xs font-medium text-[#FAFAFA] shadow-2xl">
+        <div className="fixed right-6 bottom-24 z-50 flex items-center gap-3 rounded-xl border border-[#D4AF37]/50 bg-[#09090B] px-4 py-3 text-xs font-medium text-[#FAFAFA] shadow-2xl">
           <span className="text-[#D4AF37]">Bag Updated</span>
           <span aria-hidden="true" className="text-[#52525B]">·</span>
           <span>{toastMessage}</span>
@@ -522,6 +581,25 @@ export default function App() {
           </button>
         </div>
       )}
+
+      {/* Floating Green WhatsApp Button (Visible on all pages/sections) */}
+      <a
+        href="https://wa.me/923066238360?text=Hi%20FMK%2C%20mujhe%20mobile%20chahiye"
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Chat with FMK Mobile on WhatsApp: 03066238360"
+        title="WhatsApp: 03066238360"
+        className="fixed right-6 bottom-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-[#25D366] text-white shadow-xl shadow-[#25D366]/30 transition-transform duration-200 hover:scale-105 hover:bg-[#1EBE5D] focus:outline-none focus:ring-2 focus:ring-[#25D366] focus:ring-offset-2 focus:ring-offset-[#09090B]"
+      >
+        <svg
+          viewBox="0 0 32 32"
+          fill="currentColor"
+          className="h-7 w-7"
+          aria-hidden="true"
+        >
+          <path d="M16.004 2.667C8.64 2.667 2.667 8.64 2.667 16.004c0 2.353.615 4.651 1.784 6.678L2.56 29.59l7.072-1.855a13.28 13.28 0 0 0 6.372 1.622h.005c7.363 0 13.336-5.973 13.336-13.337 0-3.562-1.387-6.911-3.905-9.43a13.24 13.24 0 0 0-9.436-3.923zm0 24.442h-.004a11.04 11.04 0 0 1-5.631-1.542l-.404-.24-4.197 1.1 1.12-4.09-.263-.418a11.02 11.02 0 0 1-1.693-5.915c0-6.113 4.974-11.086 11.088-11.086 2.961 0 5.744 1.154 7.837 3.25a11.02 11.02 0 0 1 3.246 7.844c0 6.113-4.974 11.097-11.099 11.097zm6.08-8.308c-.333-.167-1.972-.973-2.277-1.085-.306-.111-.528-.167-.75.167-.222.333-.86 1.085-1.055 1.307-.194.223-.389.25-.722.084-.333-.167-1.407-.519-2.68-1.654-.99-.883-1.659-1.974-1.853-2.307-.194-.333-.021-.513.146-.679.15-.149.333-.389.5-.584.166-.194.222-.333.333-.556.111-.222.056-.417-.028-.584-.083-.167-.75-1.807-1.028-2.474-.27-.651-.546-.563-.75-.573l-.639-.011c-.222 0-.583.083-.889.417-.305.333-1.166 1.14-1.166 2.78 0 1.64 1.194 3.225 1.361 3.447.167.222 2.35 3.588 5.693 5.031.795.343 1.416.548 1.9.701.798.254 1.525.218 2.099.132.64-.096 1.972-.806 2.25-1.585.277-.778.277-1.445.194-1.584-.083-.139-.306-.222-.639-.389z" />
+        </svg>
+      </a>
     </div>
   );
 }

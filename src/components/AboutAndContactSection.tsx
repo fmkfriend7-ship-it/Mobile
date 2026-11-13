@@ -9,12 +9,14 @@ import {
 
 const STORAGE_PHONE_KEY = 'fmk_contact_phone';
 const STORAGE_ADDRESS_KEY = 'fmk_business_address';
+const WHATSAPP_NUMBER = '03066238360';
+const WHATSAPP_LINK =
+  'https://wa.me/923066238360?text=Hi%20FMK%2C%20mujhe%20mobile%20chahiye';
+const DEFAULT_BUSINESS_ADDRESS = 'FMK Mobile, Zafarwal';
 
 export const AboutAndContactSection: React.FC = () => {
-  const [contactNumber, setContactNumber] = useState<string>('+1 (800) 555-0199');
-  const [businessAddress, setBusinessAddress] = useState<string>(
-    'Suite 402, FMK Flagship Pavilion, Fifth Avenue, New York, NY'
-  );
+  const [contactNumber, setContactNumber] = useState<string>(WHATSAPP_NUMBER);
+  const [businessAddress, setBusinessAddress] = useState<string>(DEFAULT_BUSINESS_ADDRESS);
   const [editingPhone, setEditingPhone] = useState(false);
   const [editingAddress, setEditingAddress] = useState(false);
   const [draftPhone, setDraftPhone] = useState(contactNumber);
@@ -26,6 +28,12 @@ export const AboutAndContactSection: React.FC = () => {
   const [subject, setSubject] = useState('Product Inquiry');
   const [message, setMessage] = useState('');
   const [submitted, setSubmitted] = useState(false);
+
+  // Loading & error states
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [submittingInquiry, setSubmittingInquiry] = useState(false);
+  const [inquiryError, setInquiryError] = useState<string | null>(null);
 
   const nameInputRef = useRef<HTMLInputElement>(null);
 
@@ -45,18 +53,35 @@ export const AboutAndContactSection: React.FC = () => {
       // ignore storage errors
     }
 
-    fetchStoreSettingsFromSupabase().then((remote) => {
-      if (remote) {
-        setContactNumber(remote.contact_number);
-        setDraftPhone(remote.contact_number);
-        setBusinessAddress(remote.business_address);
-        setDraftAddress(remote.business_address);
+    fetchStoreSettingsFromSupabase().then(({ data }) => {
+      if (data) {
+        const isLegacyPhone = data.contact_number === '+1 (800) 555-0199';
+        const isLegacyAddress =
+          data.business_address ===
+          'Suite 402, FMK Flagship Pavilion, Fifth Avenue, New York, NY';
+
+        if (data.contact_number && !isLegacyPhone) {
+          setContactNumber(data.contact_number);
+          setDraftPhone(data.contact_number);
+        }
+        if (data.business_address && !isLegacyAddress) {
+          setBusinessAddress(data.business_address);
+          setDraftAddress(data.business_address);
+        }
       }
     });
   }, []);
 
-  const savePhone = () => {
-    const clean = draftPhone.trim() || '+1 (800) 555-0199';
+  const savePhone = async () => {
+    const clean = draftPhone.trim() || WHATSAPP_NUMBER;
+    setSavingSettings(true);
+    setSettingsError(null);
+    const { error } = await saveStoreSettingsToSupabase(clean, businessAddress);
+    setSavingSettings(false);
+    if (error) {
+      setSettingsError(error);
+      return;
+    }
     setContactNumber(clean);
     setDraftPhone(clean);
     setEditingPhone(false);
@@ -65,13 +90,18 @@ export const AboutAndContactSection: React.FC = () => {
     } catch {
       // ignore
     }
-    void saveStoreSettingsToSupabase(clean, businessAddress);
   };
 
-  const saveAddress = () => {
-    const clean =
-      draftAddress.trim() ||
-      'Suite 402, FMK Flagship Pavilion, Fifth Avenue, New York, NY';
+  const saveAddress = async () => {
+    const clean = draftAddress.trim() || DEFAULT_BUSINESS_ADDRESS;
+    setSavingSettings(true);
+    setSettingsError(null);
+    const { error } = await saveStoreSettingsToSupabase(contactNumber, clean);
+    setSavingSettings(false);
+    if (error) {
+      setSettingsError(error);
+      return;
+    }
     setBusinessAddress(clean);
     setDraftAddress(clean);
     setEditingAddress(false);
@@ -80,18 +110,24 @@ export const AboutAndContactSection: React.FC = () => {
     } catch {
       // ignore
     }
-    void saveStoreSettingsToSupabase(contactNumber, clean);
   };
 
-  const handleContactSubmit = (e: React.FormEvent) => {
+  const handleContactSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!senderName.trim() || !senderEmail.trim() || !message.trim()) return;
-    void saveInquiryToSupabase({
+    setSubmittingInquiry(true);
+    setInquiryError(null);
+    const { error } = await saveInquiryToSupabase({
       senderName: senderName.trim(),
       senderEmail: senderEmail.trim(),
       topic: subject,
       message: message.trim(),
     });
+    setSubmittingInquiry(false);
+    if (error) {
+      setInquiryError(error);
+      return;
+    }
     setSubmitted(true);
     setSenderName('');
     setSenderEmail('');
@@ -178,32 +214,35 @@ export const AboutAndContactSection: React.FC = () => {
               <div className="space-y-4 border-t border-white/10 pt-6">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <div className="text-xs font-medium text-[#71717A]">Owner Name</div>
+                    <div className="text-xs font-medium text-[#71717A]">Owner</div>
                     <div className="mt-0.5 text-sm font-semibold text-[#FAFAFA]">
-                      Faria (FARIA)
+                      Faria
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-xs font-medium text-[#71717A]">Company</div>
-                    <div className="mt-0.5 text-sm font-semibold text-[#D4AF37]">FMK</div>
+                    <div className="text-xs font-medium text-[#71717A]">Store</div>
+                    <div className="mt-0.5 text-sm font-semibold text-[#D4AF37]">
+                      FMK Mobile, Zafarwal
+                    </div>
                   </div>
                 </div>
 
-                {/* Editable Contact Number */}
+                {/* Editable WhatsApp / Contact Number */}
                 <div className="rounded-xl border border-white/10 bg-[#18181D] p-4">
                   <div className="flex items-center justify-between">
                     <span className="flex items-center gap-2 text-xs font-medium text-[#A1A1AA]">
-                      <Phone className="h-3.5 w-3.5 text-[#D4AF37]" />
-                      Contact Number
+                      <Phone className="h-3.5 w-3.5 text-[#25D366]" />
+                      WhatsApp Number
                     </span>
                     {editingPhone ? (
                       <button
                         type="button"
+                        disabled={savingSettings}
                         onClick={savePhone}
-                        className="flex items-center gap-1 text-xs font-semibold text-[#D4AF37] hover:underline"
+                        className="flex items-center gap-1 text-xs font-semibold text-[#D4AF37] hover:underline disabled:opacity-60"
                       >
                         <Check className="h-3.5 w-3.5" />
-                        Save
+                        {savingSettings ? 'Saving...' : 'Save'}
                       </button>
                     ) : (
                       <button
@@ -227,12 +266,22 @@ export const AboutAndContactSection: React.FC = () => {
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') savePhone();
                       }}
-                      aria-label="Edit contact number"
+                      aria-label="Edit WhatsApp contact number"
                       className="font-mono-tabular mt-2 w-full rounded-lg border border-[#D4AF37] bg-[#09090B] px-3 py-1.5 text-sm text-[#FAFAFA] focus:outline-none"
                     />
                   ) : (
-                    <div className="font-mono-tabular mt-1.5 text-sm font-semibold text-[#FAFAFA]">
-                      {contactNumber}
+                    <div className="mt-1.5 flex items-center justify-between gap-2">
+                      <span className="font-mono-tabular text-sm font-semibold text-[#FAFAFA]">
+                        WhatsApp: {contactNumber}
+                      </span>
+                      <a
+                        href={WHATSAPP_LINK}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs font-semibold text-[#25D366] hover:underline"
+                      >
+                        Chat on WhatsApp
+                      </a>
                     </div>
                   )}
                 </div>
@@ -247,11 +296,12 @@ export const AboutAndContactSection: React.FC = () => {
                     {editingAddress ? (
                       <button
                         type="button"
+                        disabled={savingSettings}
                         onClick={saveAddress}
-                        className="flex items-center gap-1 text-xs font-semibold text-[#D4AF37] hover:underline"
+                        className="flex items-center gap-1 text-xs font-semibold text-[#D4AF37] hover:underline disabled:opacity-60"
                       >
                         <Check className="h-3.5 w-3.5" />
-                        Save
+                        {savingSettings ? 'Saving...' : 'Save'}
                       </button>
                     ) : (
                       <button
@@ -282,6 +332,12 @@ export const AboutAndContactSection: React.FC = () => {
                   )}
                 </div>
               </div>
+
+              {settingsError && (
+                <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-2.5 text-xs text-red-300">
+                  {settingsError}
+                </div>
+              )}
             </div>
 
             <button
@@ -381,12 +437,19 @@ export const AboutAndContactSection: React.FC = () => {
                   />
                 </div>
 
+                {inquiryError && (
+                  <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-2.5 text-xs text-red-300">
+                    {inquiryError}
+                  </div>
+                )}
+
                 <button
                   type="submit"
-                  className="flex items-center justify-center gap-2 rounded-xl bg-[#FAFAFA] px-6 py-3 text-sm font-semibold text-[#09090B] transition-colors hover:bg-[#D4AF37]"
+                  disabled={submittingInquiry}
+                  className="flex items-center justify-center gap-2 rounded-xl bg-[#FAFAFA] px-6 py-3 text-sm font-semibold text-[#09090B] transition-colors hover:bg-[#D4AF37] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Send className="h-4 w-4" />
-                  <span>Send Message to FMK</span>
+                  <span>{submittingInquiry ? 'Sending Message...' : 'Send Message to FMK'}</span>
                 </button>
               </form>
             )}
@@ -397,8 +460,17 @@ export const AboutAndContactSection: React.FC = () => {
         <footer className="mt-20 flex flex-col items-start justify-between gap-6 border-t border-white/10 pt-8 sm:flex-row sm:items-center">
           <div className="flex flex-col gap-1">
             <FmkLogo />
-            <p className="mt-2 text-xs text-[#71717A]">
-              FMK Mobile Website · Company: FMK · Owner: Faria (FARIA)
+            <p className="mt-2 text-xs text-[#A1A1AA]">
+              FMK Mobile, Zafarwal ·{' '}
+              <a
+                href={WHATSAPP_LINK}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-[#25D366] hover:underline"
+              >
+                WhatsApp: {WHATSAPP_NUMBER}
+              </a>{' '}
+              · Owner: Faria
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-6 text-xs text-[#A1A1AA]">
